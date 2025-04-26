@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mines Signals</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="jquery.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <style>
+    * { margin: 0; padding: 0; }
+    html { font-size: 15px; user-select: none; overflow: hidden; }
+    body { font-family: Tahoma, sans-serif; cursor: default; color: white; background: #3b3865; overflow: hidden; }
+    .background { position: fixed; top:0; left:0; width:100%; height:100%; background: radial-gradient(#5d59a1, #3b3865); z-index:-1; }
+    .background-strip { width:2px; height:50px; background:rgba(255,255,255,0.15); position:absolute; bottom:0; opacity:0;
+      animation: stripAnim infinite alternate-reverse;
+    }
+    @keyframes stripAnim { 0%{transform:translateY(0);opacity:0}50%{opacity:1}100%{transform:translateY(-100vh);opacity:0}}
+    .bg-dollar, .bg-mine { position:absolute; pointer-events:none; opacity:0.8; background-repeat:no-repeat; background-size:contain; }
+    .bg-dollar { top:-20px; right:-35px; width:170px; height:170px; background-image:url(dollar.png);
+      animation: dollarAnim 5.5s infinite alternate-reverse;
+    }
+    @keyframes dollarAnim {0%{transform:rotate(30deg)}100%{transform:rotate(15deg)}}
+    .bg-mine { bottom:-20px; left:-30px; width:200px; height:200px; background-image:url(mine.png);
+      animation: mineAnim 4s infinite alternate-reverse;
+    }
+    @keyframes mineAnim {0%{transform:rotate(290deg)}100%{transform:rotate(270deg)}}
+    .screen { position:absolute; top:50%; left:0; right:0; transform:translateY(-50%); max-width:400px; margin:0 auto; padding:30px; text-align:center; }
+    .header { font-size:41px; font-weight:bold; text-shadow:0 0 10px black; position:relative; }
+    .glitch:before, .glitch:after { content: attr(data-text); position:absolute; left:0; right:0; top:0; color:white; overflow:hidden; }
+    .glitch:before { animation: glitch1 6s infinite linear alternate-reverse; text-shadow:3px 0 blue; }
+    .glitch:after { animation: glitch2 4s infinite linear alternate-reverse; text-shadow:-3px 0 red; }
+    @keyframes glitch1 {0%{clip-path:inset(0% 0% 90% 0%);} 10%{clip-path:inset(10% 0 85% 0);} 20%{clip-path:inset(20% 0 70% 0);} 30%{clip-path:inset(30% 0 55% 0);} 40%{clip-path:inset(40% 0 40% 0);} 50%{clip-path:inset(50% 0 25% 0);} 60%{clip-path:inset(60% 0 10% 0);} 70%{clip-path:inset(70% 0 5% 0);} 80%{clip-path:inset(80% 0 25% 0);} 90%{clip-path:inset(90% 0 45% 0);} 100%{clip-path:inset(100% 0 60% 0);}}
+    @keyframes glitch2 {0%{clip-path:inset(0% 0% 60% 0%);} 10%{clip-path:inset(5% 0 55% 0);} 20%{clip-path:inset(10% 0 45% 0);} 30%{clip-path:inset(15% 0 35% 0);} 40%{clip-path:inset(20% 0 25% 0);} 50%{clip-path:inset(25% 0 15% 0);} 60%{clip-path:inset(30% 0 10% 0);} 70%{clip-path:inset(35% 0 5% 0);} 80%{clip-path:inset(40% 0 10% 0);} 90%{clip-path:inset(45% 0 30% 0);} 100%{clip-path:inset(50% 0 50% 0);}}
+    .mines-board { position:relative; background:#5d59a1; border:2px solid white; border-radius:13px; box-shadow:0 0 13px white; margin:25px 0; padding:10px; overflow:hidden; }
+    .mines-board-loading { position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(93,89,161,0.7); z-index:1; opacity:0; transition:0.6s; display:flex; align-items:center; justify-content:center; }
+    .loader { width:50px; aspect-ratio:1; border:16px solid rgba(255,255,255,0.5); border-right-color:#fffc55; border-radius:50%; animation:spin 1.3s linear infinite; }
+    @keyframes spin { to{transform:rotate(1turn)} }
+    .mines-board-grid { display:grid; grid-template-columns:repeat(5, auto); gap:5px; }
+    .mine { position:relative; height:37px; background:linear-gradient(45deg,#0e4a7c,#04375f);
+      box-shadow: inset 0 0 0 3px #025493; border-bottom:3px solid #093864; border-radius:6px; transform:scale(1.00001);
+    }
+    .mine:after { content:''; position:absolute; width:18px; height:18px; background:linear-gradient(45deg,#216ca9,#205294); border-radius:50%; top:50%; left:50%; transform:translate(-50%,-50%); }
+    .mines-open-anim { animation: openAnim 0.8s linear both; }
+    @keyframes openAnim {50%{transform:scale(0)}100%{transform:scale(1)}}
+    /* SAFE CELL */
+    .mine-selected { background:linear-gradient(45deg,#f9b435,#f88827)!important; box-shadow: inset 0 0 0 3px #ed9929; border-bottom:3px solid #c55c16; }
+    .mine-selected:after {
+      content: '';
+      position: absolute;
+      width: 60%;
+      height: 60%;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      background-image: url(star.png) !important;
+      background-repeat: no-repeat !important;
+      background-position: center center !important;
+      background-size: contain !important;
+      filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.4));
+    }
+    /* TRAP CELL */
+    .mine-trap { background:linear-gradient(45deg,#8a1c1c,#520d0d)!important; box-shadow: inset 0 0 0 3px #c02020; border-bottom:3px solid #5c0303; }
+    .mine-trap:after {
+      content: '';
+      position: absolute;
+      width: 60%;
+      height: 60%;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      background-image: url(mine.png) !important;
+      background-repeat: no-repeat !important;
+      background-position: center center !important;
+      background-size: contain !important;
+      filter: drop-shadow(0 0 5px rgba(0,0,0,0.4));
+    }
+    .buttons { transition:0.5s; }
+    .buttons-blocked { opacity:0.5; pointer-events:none; }
+    .buttons-mines-text { font-size:20px; }
+    .buttons-mines-select { display:grid; grid-template-columns:repeat(4,1fr); gap:10px 20px; margin-top:10px; }
+    .mines-amount { position:relative; width:100%; height:35px; background:#5d59a1; border:2px solid white; border-radius:13px; color:white; transition:0.5s; }
+    .mines-amount span { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:21px; }
+    .mines-amount-selected { background:white; color:black; box-shadow:0 0 10px white; }
+    .get-signal { margin-top:20px; padding:10px 5px; background:linear-gradient(228deg,#fff80d,#f8f99c); border-bottom:3px solid #9fb32f;
+      box-shadow:0 0 28px yellow; color:black; font-size:22px; font-weight:bold; text-transform:uppercase; border-radius:14px; max-width:230px; margin-left:auto; margin-right:auto;
+    }
+  </style>
+<script>
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function random(min, max) { return Math.floor(min + Math.random() * (max + 1 - min)); }
+
+  let mines_amount = 1, get_signal_timeout = false;
+
+  async function getSignal() {
+  if (get_signal_timeout) return;
+  get_signal_timeout = true;
+
+  /* Сброс предыдущего состояния */
+  $('.buttons').addClass('buttons-blocked');
+  $('.mine-selected, .mine-trap, .mines-open-anim')
+    .removeClass('mine-selected mine-trap mines-open-anim');
+
+  /* Лоадер */
+  $('.mines-board-loading').css('opacity', 1);
+  await sleep(random(1500, 5000));
+  $('.mines-board-loading').css('opacity', 0);
+  await sleep(600);
+
+  const total = 25;
+  const cellsToOpen = [];
+
+  // выбираем случайные клетки для открытия (без повторов)
+  while (cellsToOpen.length < mines_amount) {
+    const r = random(1, total);
+    if (!cellsToOpen.includes(r)) cellsToOpen.push(r);
+  }
+
+  // открываем ТОЛЬКО выбранные клетки (ВСЕ безопасные)
+  for (let i = 0; i < cellsToOpen.length; i++) {
+    const cellNum = cellsToOpen[i];
+    const $cell = $('#mine' + cellNum);
+
+    $cell.addClass('mines-open-anim');
+    await sleep(400); // времен openAnim
+
+    $cell.addClass('mine-selected'); // 
+
+    await sleep(500); // пауза между клетками
+  }
+
+  $('.buttons').removeClass('buttons-blocked');
+  get_signal_timeout = false;
+}
+
+
+  
+
+
+    function minesAmount(val){
+      if(get_signal_timeout) return;
+      if(val === mines_amount) return;
+      mines_amount = val;
+      $('.mines-amount-selected').removeClass('mines-amount-selected');
+      $('#mines_amount_' + val).addClass('mines-amount-selected');
+    }
+
+    $(function(){
+      let tg = window.Telegram?.WebApp;
+      if(tg){
+        tg.backgroundColor = '#3b3865';
+        tg.headerColor = '#3b3865';
+        tg.expand();
+      }
+
+      // init background strips
+      let off = 15, cnt = Math.round($(document).width()/off);
+      for(let i = 0; i < cnt; i++){
+        let d = random(33,333), t = random(0,1000), dur = random(4000,8000), x = i * off + 4;
+        $('<div class="background-strip">').css({left:x+'px',height:d+'px',bottom:-d/2+'px',animationDelay:t+'ms',animationDuration:dur+'ms'}).appendTo('.background');
+      }
+    });
+  </script>
+</head>
+<body>
+  <div class="background"><div class="bg-dollar"></div><div class="bg-mine"></div></div>
+  <div class="screen">
+    <div class="header glitch" data-text="">Mines Hack</div>
+    <div class="mines-board">
+      <div class="mines-board-loading"><div class="loader"></div></div>
+      <div class="mines-board-grid">
+        <!-- Generate 25 cells -->
+        <div class="mine" id="mine1"></div>
+        <div class="mine" id="mine2"></div>
+        <div class="mine" id="mine3"></div>
+        <div class="mine" id="mine4"></div>
+        <div class="mine" id="mine5"></div>
+        <div class="mine" id="mine6"></div>
+        <div class="mine" id="mine7"></div>
+        <div class="mine" id="mine8"></div>
+        <div class="mine" id="mine9"></div>
+        <div class="mine" id="mine10"></div>
+        <div class="mine" id="mine11"></div>
+        <div class="mine" id="mine12"></div>
+        <div class="mine" id="mine13"></div>
+        <div class="mine" id="mine14"></div>
+        <div class="mine" id="mine15"></div>
+        <div class="mine" id="mine16"></div>
+        <div class="mine" id="mine17"></div>
+        <div class="mine" id="mine18"></div>
+        <div class="mine" id="mine19"></div>
+        <div class="mine" id="mine20"></div>
+        <div class="mine" id="mine21"></div>
+        <div class="mine" id="mine22"></div>
+        <div class="mine" id="mine23"></div>
+        <div class="mine" id="mine24"></div>
+        <div class="mine" id="mine25"></div>
+      </div>
+    </div>
+    <div class="buttons">
+      <div class="buttons-mines-text">💣 Choose mines amount 💣</div>
+      <div class="buttons-mines-select">
+        <div class="mines-amount mines-amount-selected" id="mines_amount_1" onclick="minesAmount(1)"><span>1</span></div>
+        <div class="mines-amount" id="mines_amount_2" onclick="minesAmount(2)"><span>2</span></div>
+        <div class="mines-amount" id="mines_amount_3" onclick="minesAmount(3)"><span>3</span></div>
+        <div class="mines-amount" id="mines_amount_4" onclick="minesAmount(4)"><span>4</span></div>
+        <div class="mines-amount" id="mines_amount_5" onclick="minesAmount(5)"><span>5</span></div>
+        <div class="mines-amount" id="mines_amount_6" onclick="minesAmount(6)"><span>6</span></div>
+        <div class="mines-amount" id="mines_amount_7" onclick="minesAmount(7)"><span>7</span></div>
+        <div class="mines-amount" id="mines_amount_8" onclick="minesAmount(8)"><span>8</span></div>
+      </div>
+      <div class="get-signal" onclick="getSignal()">Get Signal</div>
+    </div>
+  </div>
+</body>
+</html>
